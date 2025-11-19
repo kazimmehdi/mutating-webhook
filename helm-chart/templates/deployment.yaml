@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mutating-webhook.fullname" . }}
+  labels:
+    {{- include "mutating-webhook.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mutating-webhook.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "mutating-webhook.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "mutating-webhook.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: webhook
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: https
+          containerPort: {{ .Values.service.targetPort }}
+          protocol: TCP
+        env:
+        {{- if .Values.webhook.useConfigFile }}
+        - name: LABELS_CONFIG_FILE
+          value: "/etc/webhook/config/labels.json"
+        - name: TOPOLOGY_CONFIG_FILE
+          value: "/etc/webhook/config/topologySpreadConstraints.json"
+        {{- end }}
+        {{- with .Values.webhook.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: https
+            scheme: HTTPS
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        volumeMounts:
+        - name: webhook-certs
+          mountPath: /etc/webhook/certs
+          readOnly: true
+        {{- if .Values.webhook.useConfigFile }}
+        - name: webhook-config
+          mountPath: /etc/webhook/config/labels.json
+          subPath: labels.json
+          readOnly: true
+        - name: webhook-config
+          mountPath: /etc/webhook/config/topologySpreadConstraints.json
+          subPath: topologySpreadConstraints.json
+          readOnly: true          
+        {{- end }}
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: {{ include "mutating-webhook.fullname" . }}-cert
+      {{- if .Values.webhook.useConfigFile }}
+      - name: webhook-config
+        configMap:
+          name: {{ include "mutating-webhook.fullname" . }}-config
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,52 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your mutating webhook has been deployed to namespace: {{ .Release.Namespace }}
+
+CERTIFICATE INFORMATION:
+- Certificate validity: {{ .Values.certificate.validityDays }} days
+- Organization: {{ .Values.certificate.organization }}
+- Certificate generated using custom shell script with OpenSSL
+
+The webhook will intercept the following operations:
+{{- range .Values.webhook.rules }}
+  - Operations: {{ .operations }}
+    Resources: {{ .resources }}
+    API Groups: {{ .apiGroups }}
+{{- end }}
+
+VERIFICATION STEPS:
+
+1. Check certificate generation job:
+   kubectl get jobs -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
+   kubectl logs -n {{ .Release.Namespace }} job/{{ include "mutating-webhook.fullname" . }}
+
+2. Verify the TLS secret was created:
+   kubectl get secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls
+   kubectl describe secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls
+
+3. Check certificate details:
+   kubectl get secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
+
+4. Check the webhook deployment status:
+   kubectl get deployment -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
+
+5. Check the webhook service:
+   kubectl get service -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
+
+6. Check the mutating webhook configuration:
+   kubectl get mutatingwebhookconfiguration {{ include "mutating-webhook.fullname" . }}
+   kubectl describe mutatingwebhookconfiguration {{ include "mutating-webhook.fullname" . }}
+
+7. View the webhook logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "mutating-webhook.name" . }}
+
+TROUBLESHOOTING:
+
+If the webhook is not working:
+- Check if certificates are valid and not expired
+- Verify the CA bundle is properly injected into the webhook configuration
+- Check webhook pod logs for TLS errors
+- Ensure the service DNS name matches the certificate SAN entries
+
+To regenerate certificates:
+   helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }}

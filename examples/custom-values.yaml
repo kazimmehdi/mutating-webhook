@@ -1,0 +1,44 @@
+# Example: Production configuration with multiple labels
+
+replicaCount: 3
+
+image:
+  repository: your-registry/mutating-webhook
+  tag: "v1.0.0"
+  pullPolicy: Always
+
+webhook:
+  # Multiple labels for production tracking
+  labels:
+    mutated: "true"
+    team: "platform-engineering"
+    cost-center: "engineering"
+    compliance: "required"
+    environment: "production"
+  
+  # Apply only to labeled namespaces
+  namespaceSelector:
+    matchLabels:
+      webhook-enabled: "true"
+  
+  # Fail pod creation if webhook fails (production)
+  failurePolicy: Fail
+  
+  timeoutSeconds: 10
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+
+# High availability configuration
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+    - labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: mutating-webhook
+      topologyKey: kubernetes.io/hostname
