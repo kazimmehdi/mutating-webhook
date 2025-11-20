@@ -2,7 +2,7 @@ apiVersion: v2
 name: mutating-webhook
 description: A Helm chart for Kubernetes mutating webhook that adds labels to pods
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.0.0"
 keywords:
   - webhook
