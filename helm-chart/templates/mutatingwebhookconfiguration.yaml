@@ -9,7 +9,7 @@ metadata:
   labels:
     {{- include "mutating-webhook.labels" . | nindent 4 }}
 webhooks:
-- name: mutate.{{ include "mutating-webhook.fullname" . }}.svc
+- name: {{ include "mutating-webhook.fullname" . }}.{{ .Release.Namespace }}.svc
   clientConfig:
     service:
       name: {{ include "mutating-webhook.fullname" . }}
