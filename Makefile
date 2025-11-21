@@ -2,7 +2,7 @@
 
 IMAGE_NAME ?= mutating-webhook
 IMAGE_TAG ?= 1.0.2
-REGISTRY ?= docker.io/kazimmehdi
+REGISTRY ?= docker.io/kazimmehdi/klab
 NAMESPACE ?= webhook-system
 RELEASE_NAME ?= mutating-webhook
 
