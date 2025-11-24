@@ -3,7 +3,7 @@ name: mutating-webhook
 description: A Helm chart for Kubernetes mutating webhook that adds labels to pods
 type: application
 version: 0.1.4
-appVersion: "1.0.0"
+appVersion: "1.0.1"
 keywords:
   - webhook
   - mutating

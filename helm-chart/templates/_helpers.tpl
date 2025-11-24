@@ -58,3 +58,49 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Generate or load the CA cert.
+Returned object: dict with key "Cert"
+*/}}
+{{- define "mutating-webhook.tls" -}}
+  {{- if .Values.selfSignedCert.enabled }}
+
+    {{- $ca := include "mutating-webhook.ca" . | fromYaml }}
+    {{- $cn := tpl .Values.selfSignedCert.commonName . }}
+
+    {{- /* Normalize altNames into a list */}}
+    {{- $altNames := list }}
+    {{- if kindIs "slice" .Values.selfSignedCert.altNames }}
+      {{- $altNames = .Values.selfSignedCert.altNames }}
+    {{- else if .Values.selfSignedCert.altNames }}
+      {{- $altNames = list .Values.selfSignedCert.altNames }}
+    {{- end }}
+
+    {{- /* Call genSignedCert safely */}}
+    {{- $cert := genSignedCert $cn $altNames (list) $ca 365 }}
+
+    {{- $cert }}
+
+  {{- else }}
+
+    {{- dict
+          "Cert" .Values.tls.crt
+          "Key"  .Values.tls.key
+    }}
+
+  {{- end }}
+{{- end }}
+
+
+{{/*
+Generate certificates for mutating-webhook api server 
+*/}}
+{{- define "mutating-webhook.gen-certs" -}}
+{{- $altNames := list ( printf "%s.%s" (include "mutating-webhook.name" .) .Release.Namespace ) ( printf "%s.%s.svc" (include "mutating-webhook.name" .) .Release.Namespace ) -}}
+{{- $ca := genCA "mutating-webhook-ca" 365 -}}
+{{- $cert := genSignedCert ( include "mutating-webhook.name" . ) nil $altNames 365 $ca -}}
+tls.crt: {{ $cert.Cert | b64enc }}
+tls.key: {{ $cert.Key | b64enc }}
+ca: {{ $ca.Cert | b64enc }}
+{{- end -}}

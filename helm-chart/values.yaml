@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: docker.io/library/mutating-webhook
+  repository: docker.io/kazimmehdi/klab
   pullPolicy: IfNotPresent
   tag: "1.0.2"
 
@@ -67,12 +67,7 @@ webhook:
     maxSkew: 1
     whenUnsatisfiable: DoNotSchedule
 
-certificate:
-  # Use embedded script for certificate generation
-  useEmbeddedScript: true
-  # Certificate validity in days
-  daysValid: 365
-  # Organization name for certificate
-  organization: "Kubernetes Webhook"
-  # Common name (will be set to service name if empty)
-  commonName: ""
+selfSignedCert:
+  enabled: true
+  commonName: "{{ .Values.fullnameOverride }}-k8s-mutating-webhook.svc"
+  altNames: []

@@ -3,8 +3,7 @@ Thank you for installing {{ .Chart.Name }}!
 Your mutating webhook has been deployed to namespace: {{ .Release.Namespace }}
 
 CERTIFICATE INFORMATION:
-- Certificate validity: {{ .Values.certificate.validityDays }} days
-- Organization: {{ .Values.certificate.organization }}
+
 - Certificate generated using custom shell script with OpenSSL
 
 The webhook will intercept the following operations:
