@@ -1,0 +1,11 @@
+{{- if and .Values.certManager.enabled .Values.certManager.createIssuer -}}
+{{- $full := include "mutating-webhook.fullname" . -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ default (printf "%s-selfsigned" $full) .Values.certManager.issuerName }}
+  labels:
+    {{- include "mutating-webhook.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end -}}

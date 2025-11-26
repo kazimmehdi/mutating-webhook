@@ -1,8 +1,8 @@
 .PHONY: build docker-build docker-push helm-install helm-uninstall test clean
 
-IMAGE_NAME ?= mutating-webhook
+IMAGE_NAME ?= k8s-mutating-webhook
 IMAGE_TAG ?= 1.0.2
-REGISTRY ?= docker.io/kazimmehdi/klab
+REGISTRY ?= artifactory.cloud.cms.gov/cms-devops-docker-local
 NAMESPACE ?= webhook-system
 RELEASE_NAME ?= mutating-webhook
 
@@ -13,13 +13,13 @@ test:
 	go test -v ./...
 
 docker-build:
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+	docker build -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) .
 
 docker-build-minikube:
 	eval $$(minikube docker-env) && docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
 
 docker-push:
-	docker tag $(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
+	docker tag $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 	docker push $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)
 
 helm-install:

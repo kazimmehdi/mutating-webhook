@@ -1,13 +1,13 @@
 apiVersion: v2
-name: mutating-webhook
+appVersion: 1.0.4
 description: A Helm chart for Kubernetes mutating webhook that adds labels to pods
-type: application
-version: 0.1.4
-appVersion: "1.0.1"
 keywords:
-  - webhook
-  - mutating
-  - admission-controller
+- webhook
+- mutating
+- admission-controller
 maintainers:
-  - name: Kazim Mehdi
-    email: kazim.mehdi@samtek.io
+- email: kazim.mehdi@samtek.io
+  name: Kazim Mehdi
+name: mutating-webhook
+type: application
+version: 0.1.3

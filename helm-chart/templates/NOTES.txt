@@ -3,8 +3,26 @@ Thank you for installing {{ .Chart.Name }}!
 Your mutating webhook has been deployed to namespace: {{ .Release.Namespace }}
 
 CERTIFICATE INFORMATION:
+{{- $full := include "mutating-webhook.fullname" . -}}
 
-- Certificate generated using custom shell script with OpenSSL
+{{- if .Values.certManager.enabled }}
+- Certificate provider: cert-manager
+- TLS Secret: {{ $full }}-tls
+- Issuer Kind: {{ .Values.certManager.issuerKind | default "Issuer" }}
+- Issuer Name: {{ .Values.certManager.issuerName | default (printf "%s-selfsigned" $full) }}
+- Duration: {{ .Values.certManager.duration | default "8760h" }}
+- Renew Before: {{ .Values.certManager.renewBefore | default "720h" }}
+- CA bundle: injected automatically via cert-manager cainjector
+{{- else if .Values.selfSignedCert.enabled }}
+- Certificate provider: Helm self-signed (genCA/genSignedCert)
+- TLS Secret: {{ $full }}-tls
+- Certificate validity: {{ .Values.selfSignedCert.daysValid | default 365 }} days
+- Additional SANs: {{ .Values.selfSignedCert.altNames | default (list) | join ", " | default "none" }}
+{{- else }}
+- Certificate provider: external (provided via values)
+- TLS Secret: {{ $full }}-tls
+- NOTE: You must provide tls.crt and tls.key in values.yaml
+{{- end }}
 
 The webhook will intercept the following operations:
 {{- range .Values.webhook.rules }}
@@ -15,26 +33,32 @@ The webhook will intercept the following operations:
 
 VERIFICATION STEPS:
 
-1. Check certificate generation job:
-   kubectl get jobs -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
-   kubectl logs -n {{ .Release.Namespace }} job/{{ include "mutating-webhook.fullname" . }}
+1. Verify the TLS secret exists:
+   kubectl get secret -n {{ .Release.Namespace }} {{ $full }}-tls
+   kubectl describe secret -n {{ .Release.Namespace }} {{ $full }}-tls
 
-2. Verify the TLS secret was created:
-   kubectl get secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls
-   kubectl describe secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls
+{{- if .Values.certManager.enabled }}
+2. Check cert-manager resources:
+   kubectl get certificate -n {{ .Release.Namespace }} {{ $full }}-cert
+   kubectl describe certificate -n {{ .Release.Namespace }} {{ $full }}-cert
+   kubectl get issuer,clusterissuer -n {{ .Release.Namespace }}
 
-3. Check certificate details:
-   kubectl get secret -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
+3. Confirm CA injection on webhook:
+   kubectl get mutatingwebhookconfiguration {{ $full }} -o yaml | grep -n "caBundle"
+{{- else }}
+2. Check certificate details:
+   kubectl get secret -n {{ .Release.Namespace }} {{ $full }}-tls -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -noout -text
+{{- end }}
 
 4. Check the webhook deployment status:
-   kubectl get deployment -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
+   kubectl get deployment -n {{ .Release.Namespace }} {{ $full }}
 
 5. Check the webhook service:
-   kubectl get service -n {{ .Release.Namespace }} {{ include "mutating-webhook.fullname" . }}
+   kubectl get service -n {{ .Release.Namespace }} {{ $full }}
 
 6. Check the mutating webhook configuration:
-   kubectl get mutatingwebhookconfiguration {{ include "mutating-webhook.fullname" . }}
-   kubectl describe mutatingwebhookconfiguration {{ include "mutating-webhook.fullname" . }}
+   kubectl get mutatingwebhookconfiguration {{ $full }}
+   kubectl describe mutatingwebhookconfiguration {{ $full }}
 
 7. View the webhook logs:
    kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "mutating-webhook.name" . }}
@@ -42,10 +66,21 @@ VERIFICATION STEPS:
 TROUBLESHOOTING:
 
 If the webhook is not working:
-- Check if certificates are valid and not expired
-- Verify the CA bundle is properly injected into the webhook configuration
-- Check webhook pod logs for TLS errors
+- Verify the TLS secret exists and is mounted into the pod
+- Ensure the CA bundle is present in the MutatingWebhookConfiguration (or injected by cert-manager)
+- Check webhook pod logs for TLS / handshake errors
 - Ensure the service DNS name matches the certificate SAN entries
+- Confirm your namespaceSelector excludes this namespace if you enabled that safety
 
 To regenerate certificates:
-   helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }}
+{{- if .Values.certManager.enabled }}
+- Delete and recreate the Certificate (cert-manager will re-issue):
+  kubectl delete certificate -n {{ .Release.Namespace }} {{ $full }}-cert
+  flux reconcile helmrelease {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- else if .Values.selfSignedCert.enabled }}
+- Helm upgrade will re-render and re-create the secret:
+  helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }}
+{{- else }}
+- Update tls.crt/tls.key values and upgrade:
+  helm upgrade {{ .Release.Name }} . -n {{ .Release.Namespace }}
+{{- end }}

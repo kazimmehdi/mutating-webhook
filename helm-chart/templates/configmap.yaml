@@ -5,8 +5,10 @@ metadata:
   labels:
     {{- include "mutating-webhook.labels" . | nindent 4 }}
 data:
+  podSelectorLabels.json: |
+    {{- toJson .Values.webhook.podSelectorLabels | nindent 4 }}
   labels.json: |
     {{- toJson .Values.webhook.labels | nindent 4 }}
-  topologySpreadConstraints.json: |
-    {{- toJson .Values.webhook.topologySpreadConstraints | nindent 4 }}
+  nodeSelectorLabels.json: |
+    {{- toJson .Values.webhook.nodeSelectorLabels | nindent 4 }}
 

@@ -1,0 +1,30 @@
+{{- if .Values.certManager.enabled -}}
+{{- $full := include "mutating-webhook.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+{{- $issuerKind := default "Issuer" .Values.certManager.issuerKind -}}
+{{- $issuerName := "" -}}
+{{- if .Values.certManager.createIssuer -}}
+  {{- $issuerName = default (printf "%s-selfsigned" $full) .Values.certManager.issuerName -}}
+{{- else -}}
+  {{- $issuerName = required "certManager.issuerName is required when createIssuer=false" .Values.certManager.issuerName -}}
+{{- end -}}
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $full }}-cert
+  labels:
+    {{- include "mutating-webhook.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $full }}-tls
+  duration: {{ default "8760h" .Values.certManager.duration | quote }}
+  renewBefore: {{ default "720h" .Values.certManager.renewBefore | quote }}
+  dnsNames:
+    - {{ $full }}
+    - {{ printf "%s.%s" $full $ns }}
+    - {{ printf "%s.%s.svc" $full $ns }}
+    - {{ printf "%s.%s.svc.cluster.local" $full $ns }}
+  issuerRef:
+    kind: {{ $issuerKind }}
+    name: {{ $issuerName }}
+{{- end -}}

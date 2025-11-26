@@ -1,31 +1,34 @@
-{{- $cert := include "mutating-webhook.gen-certs" . | fromYaml }}
+{{- $full := include "mutating-webhook.fullname" . -}}
 
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: {{ include "mutating-webhook.fullname" . }}
+  name: {{ $full }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "5"
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s-cert" .Release.Namespace $full }}
   labels:
     {{- include "mutating-webhook.labels" . | nindent 4 }}
 webhooks:
-- name: mutate.{{ include "mutating-webhook.fullname" . }}.svc
+- name: mutate.{{ $full }}.svc
   clientConfig:
     service:
-      name: {{ include "mutating-webhook.fullname" . }}
+      name: {{ $full }}
       namespace: {{ .Release.Namespace }}
       path: "/mutate"
-    caBundle: {{ $cert.ca | b64enc }}
+    # caBundle will be injected by cert-manager cainjector
   rules:
   - operations: ["CREATE"]
     apiGroups: [""]
     apiVersions: ["v1"]
     resources: ["pods"]
+
   {{- with .Values.webhook.namespaceSelector }}
   namespaceSelector:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+
   admissionReviewVersions: ["v1"]
   sideEffects: None
   timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}

@@ -21,7 +21,8 @@ type patchOperation struct {
 
 type WebhookConfig struct {
 	Labels map[string]string `json:"labels"`
-	TopologySpreadConstraints []interface{} `json:""`
+	NodeSelectorLabels map[string]string `json:"nodeSelectorLabels"`
+	PodSelectorLabels map[string]string `json:"podSelectorLabels"`
 }
 
 var config WebhookConfig
@@ -30,7 +31,7 @@ func main() {
 	loadConfig()
 	http.HandleFunc("/mutate", handleMutate)
 	http.HandleFunc("/health", handleHealth)
-	log.Printf("Starting webhook server on :8443 with labels: %v, topologySpreadConstrainst: %v", config.Labels, config.TopologySpreadConstraints)
+	log.Printf("Starting webhook server on :8443 with labels: %v, NodeSelectorLabels: %v , PodSelectorLabels: %v", config.Labels, config.NodeSelectorLabels, config.PodSelectorLabels)
 	if err := http.ListenAndServeTLS(":8443", "/etc/webhook/certs/tls.crt", "/etc/webhook/certs/tls.key", nil); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
@@ -57,25 +58,40 @@ func loadConfig() {
 		log.Println("No labels configured, using default: mutated=true")
 	}
 
-	//Loading TopologySpreadConstraints Config File
-	topologySpreadConstraintConfigFile := os.Getenv("TOPOLOGY_CONFIG_FILE")
-	if topologySpreadConstraintConfigFile == "" {
-		topologySpreadConstraintConfigFile = "/etc/webhook/config/topologySpreadConstraints.json"
+	
+	// Loading Pod Selector Lables Config file
+	podSelectorLabelsConfigFile := os.Getenv("POD_SELECTOR_LABELS_CONFIG_FILE")
+	if podSelectorLabelsConfigFile == "" {
+		podSelectorLabelsConfigFile = "/etc/webhook/config/podSelectorLabels.json"
 	}
-	topologyData, err := os.ReadFile(topologySpreadConstraintConfigFile)
+	podSelectorLabelData, err := os.ReadFile(podSelectorLabelsConfigFile)
 	if err != nil {
-		log.Printf("Warning: Could not read config file %s: %v", topologySpreadConstraintConfigFile, err)
+		log.Printf("Warning: Could not read config file %s: %v", podSelectorLabelsConfigFile, err)
 		return
 	}
-	if err := json.Unmarshal(topologyData, &config.TopologySpreadConstraints); err != nil {
+	if err := json.Unmarshal(podSelectorLabelData, &config.PodSelectorLabels); err != nil {
 		log.Printf("Warning: Could not parse config file: %v", err)
 		return
 	}
-	log.Printf("Loaded configuration from file: %s", topologySpreadConstraintConfigFile)
-	if len(config.TopologySpreadConstraints) == 0 {
-		log.Println("No topology spread constraint configured")
-	}
+	log.Printf("Loaded configuration from file: %s", podSelectorLabelsConfigFile)
 
+
+	// Loading Node Selector Lables Config file
+	nodeSelectorLabelsConfigFile := os.Getenv("NODE_SELECTOR_LABELS_CONFIG_FILE")
+	if nodeSelectorLabelsConfigFile == "" {
+		nodeSelectorLabelsConfigFile = "/etc/webhook/config/nodeSelectorLabels.json"
+	}
+	nodeSelectorLabelData, err := os.ReadFile(nodeSelectorLabelsConfigFile)
+	if err != nil {
+		log.Printf("Warning: Could not read config file %s: %v", nodeSelectorLabelsConfigFile, err)
+		return
+	}
+	if err := json.Unmarshal(nodeSelectorLabelData, &config.NodeSelectorLabels); err != nil {
+		log.Printf("Warning: Could not parse config file: %v", err)
+		return
+	}
+	log.Printf("Loaded configuration from file: %s", nodeSelectorLabelsConfigFile)
+	
 }
 
 
@@ -110,18 +126,37 @@ func handleMutate(w http.ResponseWriter, r *http.Request) {
 			Message: fmt.Sprintf("Failed to unmarshal pod: %v", err),
 		}
 	} else {
-		patch := createPatch(&pod)
-		if len(patch) > 0 {
-			patchBytes, err := json.Marshal(patch)
-			if err != nil {
-				log.Printf("Failed to marshal patch: %v", err)
-			} else {
-				admissionResponse.Patch = patchBytes
-				admissionResponse.PatchType = new(admissionv1.PatchType)
-				*admissionResponse.PatchType = admissionv1.PatchTypeJSONPatch
-				log.Printf("Applied patch to pod %s/%s with labels: %v", pod.Namespace, pod.Name, config.Labels)
+
+		if ok := containsAll(config.PodSelectorLabels, pod.Labels); ok {
+			patch := createPatch(&pod)
+		
+			if len(patch) > 0 {
+				patchBytes, err := json.Marshal(patch)
+				if err != nil {
+					log.Printf("Failed to marshal patch: %v", err)
+				} else {
+					admissionResponse.Patch = patchBytes
+		
+					patchType := admissionv1.PatchTypeJSONPatch
+					admissionResponse.PatchType = &patchType
+		
+					log.Printf(
+						"Applied patch to pod %s/%s with labels: %v",
+						pod.Namespace,
+						pod.Name,
+						config.Labels,
+					)
+				}
+			}
+		} else {
+			log.Printf("no pods with all the labels: %v found, therefore no mutation...", config.PodSelectorLabels)
+			// ignore mutating but still return allowed
+			admissionResponse = &admissionv1.AdmissionResponse{
+				UID:     admissionReview.Request.UID,
+				Allowed: true,
 			}
 		}
+
 	}
 	responseAdmissionReview := admissionv1.AdmissionReview{
 		TypeMeta: metav1.TypeMeta{
@@ -142,18 +177,60 @@ func handleMutate(w http.ResponseWriter, r *http.Request) {
 
 func createPatch(pod *corev1.Pod) []patchOperation {
 	
+	
 	labelsToAdd := config.Labels
 	labels_patches, _ := patchOrReplaceLabels(pod, labelsToAdd)	
 
-	topology_constraint := config.TopologySpreadConstraints
-	topology_constraint_patches, _ := patchOrReplaceTopologySpreadConstraints(pod, topology_constraint)
+	nodeSelectorLabels := config.NodeSelectorLabels
+	node_selector_labels_patches, _ := patchOrReplaceNodeSelectors(pod, nodeSelectorLabels)
     
-	patches := append(labels_patches, topology_constraint_patches...)
+	patches := append(labels_patches, node_selector_labels_patches...)
 
 	log.Println("Printing patches array")
 	fmt.Println(patches)
 
 	return patches
+}
+
+
+func patchOrReplaceNodeSelectors(pod *corev1.Pod, nodeSelectorToAdd map[string]string) ([]patchOperation, error) {
+	var patches []patchOperation
+	if pod == nil {
+		return nil, fmt.Errorf("pod cannot be nil")
+	}
+
+	// Ensure nodeSelector exists
+	if pod.Spec.NodeSelector == nil {
+		// Create the whole nodeSelector object
+		patches = append(patches, patchOperation {
+			Op:    "add",
+			Path:  "/spec/nodeSelector",
+			Value: nodeSelectorToAdd,
+		})
+	}
+
+	// For each desired key, update or insert
+	for k, v := range nodeSelectorToAdd {
+		if _, exists := pod.Spec.NodeSelector[k]; exists {
+			// Replace the value of an existing key
+			patches = append(patches, patchOperation{
+				Op:    "replace",
+				Path:  "/spec/nodeSelector/" + escapeJSONPointer(k),
+				Value: v,
+			})
+		} else {
+			// Add new key
+			patches = append(patches, patchOperation{
+				Op:    "add",
+				Path:  "/spec/nodeSelector/" + escapeJSONPointer(k),
+				Value: v,
+			})
+		}
+	}
+
+	log.Printf("Created node selector labels patch with %d operations", len(patches))
+
+	return patches, nil
 }
 
 
@@ -187,62 +264,26 @@ func patchOrReplaceLabels(pod *corev1.Pod, labelsToAdd map[string]string) ([]pat
 	return patches, nil
 }
 
-func patchOrReplaceTopologySpreadConstraints(pod *corev1.Pod, newConstraints []interface{}) ([]patchOperation, error) {
-	var patches []patchOperation
-	if pod == nil {
-		return nil, fmt.Errorf("pod cannot be nil")
+/**
+a -> label map provided by helm - looking to find pods containing all the labels from this map
+b -> existing labels maps of the pod
+**/
+func containsAll(a, b map[string]string) bool {
+	if b == nil || len(b) == 0 {
+		return false
 	}
 
-	// Check if newConstraints is nil or empty
-	if newConstraints != nil && len(newConstraints) > 0 {
-		log.Printf("new topology constraints with %d operations", len(newConstraints))
-		// Check if topologySpreadConstraints exists
-		if pod.Spec.TopologySpreadConstraints == nil || len(pod.Spec.TopologySpreadConstraints) == 0 {
-			// Add operation - create new array
-			patches = append(patches, patchOperation{
-				Op:    "add",
-				Path:  "/spec/topologySpreadConstraints",
-				Value: newConstraints,
-			})
-			return patches, nil
-		}
+    for k, v := range a {
+		log.Printf("checking Label %s=%s if found on pod", k, v)
+        if bv, ok := b[k]; !ok || bv != v {
+            return false
+        }
+    }
+    return true
+}
 
-		// Create a map of existing constraints by topology key
-		existingMap := make(map[string]int)
-		for i, constraint := range pod.Spec.TopologySpreadConstraints {
-			log.Printf("existing topology with key %s", constraint.TopologyKey)
-			existingMap[constraint.TopologyKey] = i
-		}
-
-		// Process new constraints
-		for _, newConstraint := range newConstraints {
-			var newConstraintTopologyKey string = ""
-			if m, ok := newConstraint.(map[string]interface{}); ok {
-				newConstraintTopologyKey = m["topologyKey"].(string)
-			}
-			log.Printf("processing new topology with key %s", newConstraintTopologyKey)
-
-			if idx, exists := existingMap[newConstraintTopologyKey]; exists {
-				// Replace existing constraint at specific index
-				patches = append(patches, patchOperation{
-					Op:    "replace",
-					Path:  fmt.Sprintf("/spec/topologySpreadConstraints/%d", idx),
-					Value: newConstraint,
-				})
-			} else {
-				// Add new constraint to end of array
-				patches = append(patches, patchOperation{
-					Op:    "add",
-					Path:  "/spec/topologySpreadConstraints/-",
-					Value: newConstraint,
-				})
-			}
-		}
-	}
-
-	log.Printf("Created topology patch with %d operations", len(patches))
-
-	return patches, nil
+func allowed() *admissionv1.AdmissionResponse {
+    return &admissionv1.AdmissionResponse{Allowed: true}
 }
 
 func escapeJSONPointer(s string) string {

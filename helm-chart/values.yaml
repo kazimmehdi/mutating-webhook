@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: docker.io/kazimmehdi/klab
+  repository: artifactory.cloud.cms.gov/cms-devops-docker-local/k8s-mutating-webhook
   pullPolicy: IfNotPresent
   tag: "1.0.2"
 
@@ -47,27 +47,17 @@ tolerations: []
 affinity: {}
 
 webhook:
+  podSelectorLabels:
+    jenkins: slave
   labels:
-    mutated: "true"
+    karpenter-nodepool: "true"
   useConfigFile: true
-  topologySpreadConstraints:
-  - labelSelector:
-      matchLabels:
-        app: workload-split
-    maxSkew: 1
-    topologyKey: capacity-spread
-    whenUnsatisfiable: DoNotSchedule
-  - labelSelector:
-      matchExpressions:
-      - key: security
-        operator: In
-        values:
-        - S2
-    topologyKey: topology.kubernetes.io/zone   
-    maxSkew: 1
-    whenUnsatisfiable: DoNotSchedule
-
-selfSignedCert:
+  nodeSelectorLabels:
+    node-pool: agent
+certManager:
   enabled: true
-  commonName: "{{ .Values.fullnameOverride }}-k8s-mutating-webhook.svc"
-  altNames: []
+  createIssuer: true
+  issuerKind: Issuer          
+  issuerName: ""         
+  duration: 8760h             # 365d
+  renewBefore: 720h           # 30d 

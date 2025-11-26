@@ -1,7 +1,9 @@
+{{- $full := include "mutating-webhook.fullname" . -}}
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "mutating-webhook.fullname" . }}
+  name: {{ $full }}
   labels:
     {{- include "mutating-webhook.labels" . | nindent 4 }}
 spec:
@@ -17,12 +19,15 @@ spec:
       {{- end }}
       labels:
         {{- include "mutating-webhook.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "mutating-webhook.serviceAccountName" . }}-sa
+      serviceAccountName: {{ include "mutating-webhook.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -39,8 +44,10 @@ spec:
         {{- if .Values.webhook.useConfigFile }}
         - name: LABELS_CONFIG_FILE
           value: "/etc/webhook/config/labels.json"
-        - name: TOPOLOGY_CONFIG_FILE
-          value: "/etc/webhook/config/topologySpreadConstraints.json"
+        - name: NODE_SELECTOR_LABELS_CONFIG_FILE
+          value: "/etc/webhook/config/nodeSelectorLabels.json"
+        - name: POD_SELECTOR_LABELS_CONFIG_FILE
+          value: "/etc/webhook/config/podSelectorLabels.json"          
         {{- end }}
         {{- with .Values.webhook.extraEnv }}
         {{- toYaml . | nindent 8 }}
@@ -71,18 +78,22 @@ spec:
           subPath: labels.json
           readOnly: true
         - name: webhook-config
-          mountPath: /etc/webhook/config/topologySpreadConstraints.json
-          subPath: topologySpreadConstraints.json
+          mountPath: /etc/webhook/config/nodeSelectorLabels.json
+          subPath: nodeSelectorLabels.json
+          readOnly: true
+        - name: webhook-config
+          mountPath: /etc/webhook/config/podSelectorLabels.json
+          subPath: podSelectorLabels.json
           readOnly: true          
         {{- end }}
       volumes:
       - name: webhook-certs
         secret:
-          secretName: {{ include "mutating-webhook.fullname" .  }}-tls
+          secretName: {{ $full }}-tls
       {{- if .Values.webhook.useConfigFile }}
       - name: webhook-config
         configMap:
-          name: {{ include "mutating-webhook.fullname" . }}-config
+          name: {{ $full }}-config
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
