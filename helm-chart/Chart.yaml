@@ -8,6 +8,8 @@ keywords:
 maintainers:
 - email: kazim.mehdi@samtek.io
   name: Kazim Mehdi
+- email: max@samtek.io
+  name: Masood Rahimi  
 name: mutating-webhook
 type: application
-version: 0.1.3
+version: 0.1.4
